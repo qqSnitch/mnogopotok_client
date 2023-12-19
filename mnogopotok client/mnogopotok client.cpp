@@ -1,75 +1,84 @@
-﻿
-#include<iostream>
-#define _WINSOCK_DEPRECATED_NO_WARNINGS  
-// подавление предупреждений библиотеки winsock2
-#include <winsock2.h> 
+#define _WINSOCK_DEPRECATED_NO_WARNINGS
+#include <winsock2.h>
 #include <string>
 #include <windows.h>
-#pragma comment (lib, "Ws2_32.lib")
-#pragma warning(disable: 4996)  // подавление предупреждения 4996 
+#include <iostream>
+#include <queue>
+#include <thread>
+#pragma comment(lib, "ws2_32.lib")
+#pragma warning(disable: 4996)
 using namespace std;
-#define SRV_HOST "localhost"  //адрес сервера
+#define SRV_HOST "26.194.218.76"  //адрес сервера
 #define SRV_PORT 1234 //порт сервера
 #define CLNT_PORT 1235  //порт клиента
 #define BUF_SIZE 64  //размер сообщений
-char TXT_ANSW[] = "I am your student\n";
 
-struct Person
-{
-	string name;  //имя
-	int grades[4];  //оценки
-} A;
+struct Message {
+    char name[20];
+    char msg[120];
+} getmsg, sendmsg;
 
-double answer = -1;
+SOCKET Connection;
+char buff[10 * 1014];
+
+void getMessage() {
+    while (1) 
+    {
+        int size = recv(Connection, (char*)&getmsg, sizeof(getmsg), 0);
+        if (size >= 0) 
+        {
+            if (string(getmsg.name).compare(string(sendmsg.name)))
+                cout << getmsg.name <<": " << getmsg.msg << endl;
+        }
+    }
+    closesocket(Connection);
+    Connection = INVALID_SOCKET;
+    return;
+}
+
+int connectToServer() {
+    if (WSAStartup(0x202, (WSADATA*)&buff))
+    {
+        cout << "WSASTARTUP ERROR: " << WSAGetLastError() << "\n";
+        return 1;
+    }
+    int from_len;
+    char buf[BUF_SIZE] = { 0 };
+    hostent* hp;
+    sockaddr_in clnt_sin, srv_sin;
+    Connection = socket(AF_INET, SOCK_STREAM, 0);
+    clnt_sin.sin_family = AF_INET;
+    clnt_sin.sin_addr.s_addr = 0;
+    clnt_sin.sin_port = htons(CLNT_PORT);
+    bind(Connection, (sockaddr*)&clnt_sin, sizeof(clnt_sin));
+    hp = gethostbyname(SRV_HOST);
+    srv_sin.sin_port = htons(SRV_PORT);
+    srv_sin.sin_family = AF_INET;
+    ((unsigned long*)&srv_sin.sin_addr)[0] = ((unsigned long**)hp->h_addr_list)[0][0];
+    connect(Connection, (sockaddr*)&srv_sin, sizeof(srv_sin));
+
+    return 0;
+}
 
 int main()
 {
-	char buff[1024];
-	if (WSAStartup(0x0202, (WSADATA*)&buff[0]))
-	{
-		cout << "Error WSAStartup \n" << WSAGetLastError();
-		return -1;
-	}
-	SOCKET s;
-	int from_len;
-	char buf[BUF_SIZE] = { 0 };
-	hostent* hp;
-	sockaddr_in clnt_sin, srv_sin;
-	s = socket(AF_INET, SOCK_STREAM, 0);
-	clnt_sin.sin_family = AF_INET;
-	clnt_sin.sin_addr.s_addr = 0;
-	clnt_sin.sin_port = htons(CLNT_PORT);
-	bind(s, (sockaddr*)&clnt_sin, sizeof(clnt_sin));
-	hp = gethostbyname(SRV_HOST);
-	srv_sin.sin_port = htons(SRV_PORT);
-	srv_sin.sin_family = AF_INET;
-	((unsigned long*)&srv_sin.sin_addr)[0] = ((unsigned long**)hp->h_addr_list)[0][0];
-	connect(s, (sockaddr*)&srv_sin, sizeof(srv_sin));
-	int n=1;
-	do {
-		string mst;
-		from_len = recv(s, (char*)&buf, BUF_SIZE, 0);
-		buf[from_len] = 0;
-		cout << buf << endl;
+    if (connectToServer())
+        return -1;
+    cout << "Name: ";
+    cin >> sendmsg.name;
+    thread tread(getMessage);
+    tread.detach();
 
-		if (n == 2)
-		{
-			A.grades[0] = -1;
-			send(s, (char*)&A, sizeof(A), 0);
-			break;
-		}
-		cout << "Enter name and 4 grades to get average score: ";
-		cin >> A.name;
-		for (int i = 0; i < 4; i++)
-			cin >> A.grades[i];
-
-		send(s, (char*)&A, sizeof(A), 0);
-		from_len = recv(s, (char*)&answer, sizeof(answer), 0);
-		cout << "Average score: "<<answer<<endl;
-		cout << "1 - continue   2 - end" << endl;
-		cin >> n;
-	} while (true);
-	cin.get();
-	closesocket(s);
-	return 0;
+    while (1)
+    {
+        cin >> sendmsg.msg;
+        send(Connection, (char*)&sendmsg, sizeof(sendmsg), 0);
+        if (!string(sendmsg.msg).compare(string("!exit")))
+        {
+            break;
+        }
+    }
+    closesocket(Connection);
+    WSACleanup();
+    return 0;
 }
